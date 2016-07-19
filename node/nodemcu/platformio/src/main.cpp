@@ -1,18 +1,15 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
-#include "DHT.h"
+#include <AM2321.h>
 #include "Adafruit_MQTT.h"
 #include "Adafruit_MQTT_Client.h"
 #include <ArduinoJson.h>
 
-#define DHTPIN 4
-#define DHTTYPE DHT22
-
 #define SECONDS_BETWEEN_READINGS 30
 
 // Setup a DHT22 instance
-DHT dht(DHTPIN, DHTTYPE);
+AM2321 am2321;
 
 bool connected = false;
 unsigned long wifi_start_time;
@@ -34,10 +31,9 @@ void setup()
 {
 	pinMode(LED_BUILTIN, OUTPUT);
 	Serial.begin(115200);
-	WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    Serial.printf("Connect to %s...\n", WIFI_SSID);
+    Serial.printf("WiFi begin() = %d\n", WiFi.begin(WIFI_SSID, WIFI_PASSWORD));
 	wifi_start_time = millis();
-	dht.begin();
-
 	byte mac[6];
 	WiFi.macAddress(mac);
 	sprintf(name, "temp-%02x:%02x:%02x:%02x:%02x:%02x", mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
@@ -54,18 +50,29 @@ void blink(int time) {
 void retryWifi() {
 	blink(1000);
 	connected = false;
-	WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    Serial.printf("Retry connect to %s...\n", WIFI_SSID);
+    Serial.printf("WiFi begin() = %d\n", WiFi.begin(WIFI_SSID, WIFI_PASSWORD));
 	wifi_start_time = millis();
 }
 
 void loop()
 {
+    // Reading temperature or humidity takes about 250 milliseconds!
+    // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
+    am2321.read();
+    // Read temperature as Celsius (the default)
+    float t = am2321.temperature/10.0;
+    float h = am2321.humidity/10.0;
+    Serial.print("Temp: "); Serial.println(t);
+    Serial.print("Humidity: "); Serial.println(h);
+
 	wl_status_t status = WiFi.status();
 	switch (status) {
 		case WL_CONNECTED: // all good
 			break;
 		case WL_SCAN_COMPLETED:
 		case WL_IDLE_STATUS:
+        case WL_DISCONNECTED:
 		{
 			unsigned long currentMillis = millis();
 			if (currentMillis - wifi_start_time >= 30*1000) {
@@ -84,7 +91,6 @@ void loop()
 			retryWifi();
 			return;
 
-		case WL_DISCONNECTED:
 		case WL_CONNECT_FAILED:
 		case WL_CONNECTION_LOST:
 			Serial.printf("Problem connecting to wifi: %d\n", status);
@@ -120,13 +126,7 @@ void loop()
 		}
 	}
 
-	digitalWrite(LED_BUILTIN, HIGH);
-	// Reading temperature or humidity takes about 250 milliseconds!
-	// Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
-	float h = dht.readHumidity();
-	// Read temperature as Celsius (the default)
-	float t = dht.readTemperature();
-	digitalWrite(LED_BUILTIN, LOW);
+	blink(250);
 
 	StaticJsonBuffer<200> jsonBuffer;
 	JsonObject& root = jsonBuffer.createObject();
